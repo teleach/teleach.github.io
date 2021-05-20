@@ -1,0 +1,455 @@
+---
+title: Currency baskets, stablecoins, libra etc (Part 1)
+output:
+  md_document:
+    variant: gfm
+    preserve_yaml: TRUE
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "../_posts") })
+date: 2021-05-19
+permalink: /posts/2020/05/libra-glp
+excerpt_separator: <!--more-->
+tags:
+  - jekyll
+  - rmarkdown
+  - data
+  - visualization
+---
+
+```{r setup, include=FALSE}
+base_dir <- here::here()
+base_url <- '/'
+fig_path <- 'images/posts/libra-glp/'
+knitr::opts_knit$set(base.dir = base_dir, base.url = base_url)
+knitr::opts_chunk$set(message = F, warning = F, echo = T, cache = T,
+                      fig.path = fig_path, fig.align = 'center', dpi = 200)
+
+library(knitr)
+library(ggplot2)
+library(reshape2)
+library(plyr)
+library(Rsolnp)
+library(nloptr)
+
+# Clear WS
+rm(list = ls())
+
+# Path to exchange folder
+path_to_exrates = "../files/csvs/libra/fx"
+files <- list.files(path_to_exrates)
+names <- gsub("\\ .*","", files)
+csv_list <- list()
+
+for(i in 1:length(files)){
+  csv_list[[names[i]]] <- read.csv(file = paste0(path_to_exrates, "/", files[i]))[c(1,2)]
+}
+
+
+df_fx <- merge(csv_list[[1]], csv_list[[2]], by = "Date")
+colnames(df_fx)[c(2,3)] <- names[c(1,2)]
+
+for(i in 3:length(csv_list)){
+  
+  df_fx <- merge(df_fx, csv_list[[i]], by = "Date")
+  colnames(df_fx)[i + 1] <- names[i]
+  
+}
+
+df_fx$Date <- as.Date(df_fx$Date, "%b %d, %Y")
+df_fx <- df_fx[order(df_fx$Date),]
+df_fx_flipped <- df_fx[order(df_fx$Date, decreasing = F),]
+
+# Drop some currs INR for now
+df_fx["USD_INR"] <- NULL
+df_fx["USD_CHF"] <- NULL
+df_fx["USD_AUD"] <- NULL
+df_fx["USD_CAD"] <- NULL
+
+# Currency names
+curr_names <- c("USD", "CNY", "EUR", "GBP", "JPY")
+
+# Get the x-rates matrix
+srates <- c(1, as.numeric(df_fx[1,2:5]))
+xrates <- (srates) %*% t(1/srates)
+rownames(xrates) <- curr_names
+colnames(xrates) <- curr_names
+
+nval <- xrates / apply(xrates, 2, function(x) (prod(x[x!=0]))^(1/sum(x!=0)))
+
+```
+
+This note is based on our paper [Giudici et al. (2021)](https://www.sciencedirect.com/science/article/pii/S1544612321001355).
+
+Stablecoins have become a major talking point in the cryptoasset domain. From the private sector, Facebook, amongst numerous others, have announced plans for their own privately issued stablecoin. In the most recent iteration of Facebooks proposition, the idea is to supply digital tokens that are pegged to major currencies, i.e. LibraUSD would be pegged to the US dollar. In addition, there will be another token whose value is derived from a weighted basket of the currencies provided on the platform. The exact composition of this basket and its targeted exchange rate is unspecified. With this research we ask the optimal structure of this basket. For this, we start from the assumption that the objective is to devise a digital currency whose exchange rate fluctuations are minimised against several currencies of the worlds major currencies.
+
+<!--more-->
+
+To devise a minimum varying currency basket we use a methodology proposed by [Hovanov et al. (2004)](https://www.sciencedirect.com/science/article/pii/S0165188902000878). First, we obtain our FX rates. As a benchmark we start from the 5 currencies used in the IMFs SDR currency basket.
+
+
+```{r xratesFX, echo=FALSE}
+
+kable(xrates) 
+
+```
+
+[Hovanov et al. (2004)](https://www.sciencedirect.com/science/article/pii/S0165188902000878) (herein HKS)
+show how to compute a invariant currency value index (ICVI) which is independent of base currency choice. Such that any set of foreign exchange rates can be converted to the index regardless of the base currency. 
+
+To convert exchange rates into a currency invariant index HKS utilize the fact that exchange rates are measured by a scale of ratios with a precision of a positive factor $\beta$, where $\beta$ is defined as the geometric mean of the exchange rates.
+
+![formula](https://render.githubusercontent.com/render/math?math=Nval_i%20=%20\frac{c_{ij}}{\sqrt[n]{\prod_{r=1}^n%20c_{ij}}})
+
+where, c<sub>ij</sub> denotes the exchange rates. We compute these values through time and for convenience work with the reduced (to the moment t=0) normalized value in exchange. Such that at date t=0 the value RNVal<sub>i</sub>  = 1. The reduced normalised values are shown in the table below:
+
+```{r data2, echo=FALSE}
+
+df_nfx <- cbind(1, df_fx[,2:5])
+df_nfx <- df_nfx/apply(df_nfx, 1, function(x) (prod(x[x!=0]))^(1/sum(x!=0)))
+
+df_rnfx <- df_nfx / c(df_nfx[1,])
+
+colnames(df_rnfx) <- curr_names
+df_rnfx <- cbind(df_fx$Date, df_rnfx)
+colnames(df_rnfx)[1] <- "Date"
+
+
+kable(head(df_rnfx))
+
+```
+
+
+Over time these values look like: 
+
+
+```{r plotted1, echo=FALSE, fig.align='center'}
+
+df_toplot <- melt(df_rnfx, id.vars = "Date")
+
+ggplot(data = df_toplot, aes(y = value, x = Date, colour = variable)) +
+  geom_line() +
+  ylab("Reduced Normalised Value") +
+  xlab("Date") +
+  theme_classic() +
+  scale_colour_brewer(type = "div", palette = "Dark2") +
+  labs(colour = "Currency") +
+  theme(legend.position="top",
+        legend.text = element_text(size = 8))
+```
+
+The interpretation of the ICVI is that changes in value of the corresponding currencies can be assessed in the context of an average. Typically, we only measure performances of currencies against a numeraire (another currency or asset). By contrast, using the index, we would infer that the value of the dollar was rising on average against the currencies used in the computation of the geometric mean currency value. From our plot we observe the USD and GBP are the currencies that have appreciated the most against the average of our set of currencies, while the CNY, EUR and YEN have depreciated (on average) since 2002. 
+
+HKS go on to demonstrate how the index can be used to derive a minimum variance currency basket (MVCB) e.g. a stablecoin! The objective is to solve the optimal weights across the currencies.
+
+
+```{r optimiseWeights, echo=FALSE, message=FALSE, results='hide'}
+
+optimWeights <- function(RNVals, init_vals){
+
+  CovMat <- cov(RNVals)
+  
+  obj <- function(w, CovMat){
+    
+    w %*% CovMat %*% (w)
+    
+  }
+  
+  equal <- function(w, CovMat) {
+    sum(w)
+  }
+  
+  n <- nrow(CovMat)
+  z <- CovMat
+  x <- suppressWarnings(solnp(init_vals, obj, eqfun = equal, eqB = 1, control = list(trace = 0), CovMat = z))
+  
+  return(x$pars)
+}
+
+
+Weights_all <- optimWeights(df_rnfx[,2:6], init_vals = c(0.21, 0.14, 0.21, 0.21, 0.23))
+
+names(Weights_all) <- curr_names
+
+```
+
+Now we want to find the composition of the basket to generate 'the most stable' currency. The volatility of the currency invariant index time series is our target of stability i.e. the lower the volatility the more stable the currency. This can be framed as an optimisation problem:
+
+<img src="https://render.githubusercontent.com/render/math?math=%5Cbegin%7Bequation%7D%0A%5Cbegin%7Baligned%7D%0A%5Coperatorname%7Bmin_w%7D%20%5Cquad%20w%20%5COmega%20w'%20%20%5C%5C%0A%5Ctextrm%7Bs.t.%7D%20%5Cquad%20%5Csum_%7Bi%3D1%7D%5E%7Bn%7Dw_%7Bi%7D%3D%201%20%5C%5C%0A%20%20%20%20%20%20%20%20w_%7Bi%7D%5Cgeq%200%0A%5Cend%7Baligned%7D%0A%5Cend%7Bequation%7D">
+
+where $\Omega$ is the covariance of the reduced normalised values. Computing this we find the weights to devise the minimum varying currency basket (stablecoin).
+
+```{r showWeights, echo=FALSE, fig.align='center'}
+
+## Optim Weights
+Weights_SDR = c(0.42, 0.11, 0.31, 0.08, 0.08)
+
+# Quantities
+Q_all <- Weights_all/xrates[1,]
+# Q_SDR = Weights_SDR./[1 priceMat(1,:)];
+
+## The Stable Currency RNVals
+SAC <- rowSums(Weights_all*df_rnfx[,2:6])
+
+all_mat <- cbind(df_rnfx, SAC)
+
+Weights_table <- rbind(Weights_all, Weights_SDR)
+row.names(Weights_table) <- c("Stablecoin", "SDR")
+kable((round(Weights_table,3)))
+
+```
+
+The weights derived from the minimisation problem suggests that the distribution of the weights should be spread more evenly than those of the IMF SDRs. The heavier weighting on the dollar means fluctuations of SDRs will be positive correlated with those of the dollar, whereas the more diversified weight regime implied by the minimisation problem implies that the fluctuations of individual currencies in the basket offset one another. Working with the currency invariant indices is useful but what most people would be concerned with is the price of the stablecion (in dollars or any other currency). 
+
+To retrieve the price we need to obtain the quantities of each currency should be held, this is obtained through the following relation:
+
+<img src="https://render.githubusercontent.com/render/math?math=q_%7Bi%7D%20%3D%20%5Cmu%20%5Cfrac%7Bw_i%7D%7Bc_%7Bij%7D(t_0)%7D">
+
+where $\mu$ is a scale factor that effectively determines the initial exchange rate between the stablecoin and a chosen currency, j. For example, if we we take $\mu = 1$, 1 unit of stablecoin (SAC) will equal 1 unit of the second currenc e.g. USD. We start from 1SAC = 1USD. Note we can target any price and the same series will be replicated, but simply rescaled, such that we could choose any target price to start from. The plot below shows a rescaled version by 1.5. 
+
+
+```{r sacPlot, echo = FALSE, fig.align='center'}
+
+# Get the SAC_USD price
+SAC_USD <- as.data.frame(t(Q_all %*% t(cbind(1, 1/df_fx[,2:5]))))
+
+# Rescale
+Q_all2 <- Q_all * 1.5
+SAC_USD_2 <- as.data.frame(t(Q_all2 %*% t(cbind(1, 1/df_fx[,2:5]))))
+
+# Rename columns
+colnames(SAC_USD) <- "SAC_USD"
+colnames(SAC_USD_2) <- "SAC_USD_2"
+
+# Combine for plot
+df_fx_sac <- cbind(df_fx, SAC_USD, SAC_USD_2)
+df_fx_sac_plot <- melt(df_fx_sac[,c(1,6,7)], id.vars = "Date")
+
+ggplot(data = df_fx_sac_plot, aes(y = value, x = Date, colour = variable)) + 
+  geom_line() +
+  ylab("Exchange Rate") +
+  xlab("Date") +
+  theme_classic() +
+  scale_colour_brewer(type = "div", palette = "Dark2", labels = c("USD/SAC = 1", "USD/SAC = 1.5")) +
+  labs(colour = "Currency") +
+  theme(legend.position="top",
+        legend.text = element_text(size = 8))
+
+        
+```
+
+
+### How can this work in practice?
+
+So far, HKS provide us a methodology to find a minimum varying currency basket, but the so far we only looked at the moethodology in a backward looking context. We don't know how it would perform out-of-sample. As a simple exercise we compute weights based on a 30-day rolling window, then project the price over the next 30 days i.e. a we consider a scenario where an issuer of a weighted stablecion could update the weights every 30 days based on this methodology to keep the price as stable as possible. We then update $\mu$ in each window to be the last observed price of the previous window.
+
+```{r rollingWeights, echo = FALSE, message=FALSE, results='hide'}
+
+# Rolling weights 
+# Allocate space
+rolling_weights <- matrix(nrow = ceiling(nrow(df_rnfx)/30) - 1, ncol = dim(df_nfx)[2])
+Q_weights <- matrix(nrow = ceiling(nrow(df_rnfx)/30) - 1, ncol = dim(df_nfx)[2]) 
+
+window <- 30
+
+# Allocate prices
+SAC_price = vector(length = nrow(df_rnfx))
+
+# df_nfx <- df_nfx/apply(df_nfx, 1, function(x) (prod(x[x!=0]))^(1/sum(x!=0)))
+mu <- 1
+
+for(i in 1:nrow(rolling_weights)){
+    
+    ii = (i-1)*window + 1
+    jj = (i)*window
+    
+    RNVals_wind <- df_rnfx[ii:jj,2:6]/apply(df_rnfx[ii:jj,2:6], 1, function(x) (prod(x[x!=0]))^(1/sum(x!=0)))
+
+    Weights_wind <- optimWeights(RNVals_wind, init_vals = c(0.2, 0.2, 0.2, 0.2, 0.23))
+    
+    rolling_weights[i,] <- Weights_wind
+    Q_s <- Weights_wind/c(1, as.numeric(1/df_fx[ii,2:5])) * mu
+    Q_weights[i, ] <- Q_s
+
+    # Price
+    SAC_price[ii:jj] <- t(Q_s %*% t(cbind(1, 1/df_fx[(ii+window):(jj+window), 2:5])))
+    
+    # as.data.frame(t(Q_weights %*% t(cbind(1, 1/df_fx[(ii+window):(jj+window), 2:5]))))
+    
+    mu <- SAC_price[jj]
+}
+
+
+
+# for(i in 1:(nrow(rolling_weights))){
+#   
+#      ii = (i-1)*window + 1
+#      jj = (i)*window
+#      
+#      Q_s <- matrix(rep(Q_weights[i,], window), ncol = 5, byrow = T)
+#      # Price
+#      SAC_price[ii:jj] = rowSums(cbind(1, 1/df_fx[(ii+window):(jj+window), 2:5])*Q_s)
+#      
+# }
+
+# Drop the NAs
+to_plot <- cbind(df_fx[,c(1,3,4)], SAC_price)
+to_plot <- to_plot[complete.cases(to_plot), ]
+to_plot <- to_plot[to_plot$SAC_price != 0, ]
+df_toplot <- melt(to_plot, id.vars = "Date")
+
+```
+
+
+```{r plotSeries, echo = FALSE, fig.align='center'}
+
+# Plot
+ggplot(data = df_toplot, aes(y = value, x = Date, colour = variable)) +
+  geom_line() +
+  ylab("Exchange Rate") +
+  xlab("Date") +
+  theme_classic() +
+  scale_colour_brewer(type = "div", palette = "Dark2", labels = c("USD/EUR", "USD/GBP", "USD/SAC")) +
+  labs(colour = "Currency") +
+  theme(legend.position="top",
+        legend.text = element_text(size = 8))
+        
+```
+
+From the graph, the price of the stablecoin appears to follow a similar path to that of the historic price reconstruction done previously. If we look at the standard deviations of the series the rolling window series is more volatile (less stable), $\sigma^2_{r} = 0.2$, compared to the historical reconstruction, $\sigma^2_{h} = 0.2$. The series also runs countercyclical to the path followed by the Euro and Sterling, eluding to some notion that this asset could be used for hedging currency risks.
+
+
+### What else can we do?
+
+The first step that one might think of is to add additional assets or currencies to the basket. In particular, since we are talking about stablecoins in the crypto domain we can see if we can construct a stable basket of cryptocurrencies. We strat with a basket of Bitcoin, EOS, Ethereum, Litecoin, Monero, Stellar and XRP.
+
+
+```{r loadCryptos, echo = FALSE}
+
+
+## Grab new csvs and clear workspace 
+
+# Clear WS
+# rm(list = ls())
+
+# Path to exchange folder
+path_to_cryptos = "../files/csvs/libra/crypto"
+files <- list.files(path_to_cryptos)
+names <- gsub("\\ .*","", files)
+csv_list <- list()
+
+for(i in 1:length(files)){
+  csv_list[[names[i]]] <- read.csv(file = paste0(path_to_cryptos, "/", files[i]))[c(1,2)]
+}
+
+
+df_fx_crypto <- merge(csv_list[[1]], csv_list[[2]], by = "Date")
+colnames(df_fx_crypto)[c(2,3)] <- names[c(1,2)]
+
+for(i in 3:length(csv_list)){
+  
+  df_fx_crypto <- merge(df_fx_crypto, csv_list[[i]], by = "Date")
+  colnames(df_fx_crypto)[i + 1] <- names[i]
+  
+}
+
+# Drop Doge coin too many spikes
+df_fx_crypto$DOGE_USD <- NULL
+
+df_fx_crypto$Date <- as.Date(df_fx_crypto$Date, "%b %d, %Y")
+df_fx_crypto <- df_fx_crypto[order(df_fx_crypto$Date),]
+
+df_fx_crypto["BIN_USD"] <- NULL
+
+# Currency names
+curr_names <- c("USD", "BTC", "EOS", "ETH", 
+                "LTC", "MON", "STEL", "XRP")
+
+# Get the x-rates matrix
+srates <- c(1, as.numeric(df_fx_crypto[1, 2:8]))
+xrates <- (srates) %*% t(1/srates)
+rownames(xrates) <- curr_names
+colnames(xrates) <- curr_names
+
+nval <- xrates / apply(xrates, 2, function(x) (prod(x[x!=0]))^(1/sum(x!=0)))
+
+df_nfx <- cbind(1, df_fx_crypto[,2:8])
+df_nfx <- df_nfx/apply(df_nfx, 1, function(x) (prod(x[x!=0]))^(1/sum(x!=0)))
+
+df_rnfx_crypto <- df_nfx / c(df_nfx[1,])
+
+colnames(df_rnfx_crypto) <- curr_names
+df_rnfx_crypto <- cbind(df_fx_crypto$Date, df_rnfx_crypto)
+colnames(df_rnfx_crypto)[1] <- "Date"
+
+```
+
+Calculating the invariant indices we can plot them...
+
+```{r plotCryptoRnvals, echo=FALSE, fig.align='center'}
+
+df_toplot <- melt(df_rnfx_crypto, id.vars = "Date")
+
+ggplot(data = df_toplot, aes(y = value, x = Date, colour = variable)) +
+  geom_line() +
+  ylab("Reduced Normalised Value") +
+  xlab("Date") +
+  theme_classic() +
+  scale_colour_brewer(type = "div", palette = "Dark2") +
+  labs(colour = "Currency") +
+  theme(legend.position="top",
+        legend.text = element_text(size = 8))
+
+Weights_crypto <- optimWeights(df_rnfx_crypto[,2:9], init_vals = rep(1/8,8))
+names(Weights_crypto) <- curr_names
+
+```
+
+The picture is a different one to what we observed with major currencies, perhaps unsurprisingly as cryptocurrencies exhibit price dynamics markedly different from the standard currencies. However, could we construct something less volatile using these cryptocurrencies? Something of additional interest to note from the graph is that in 2021 the dollars has depreciated on average against all of the cryptocurrencies in the basket. 
+
+We construct our weighted average basket as before and this time inspect the correlations between the RNvals of the cryptocurrencies (+ dollar) in our basket and our weighted combination. The correlation between the stablecoin, denoted SAC, are relatively low with respect to other cryptocurrencies i.e. -> 0.
+
+```{r cryptoStableCoin, echo=FALSE, fig.align='center'}
+
+# Quantities
+Q_crypto <- Weights_crypto/xrates[1,]
+# Q_SDR = Weights_SDR./[1 priceMat(1,:)];
+
+## The Stable Currency RNVals
+SAC <- as.vector(Weights_crypto %*% t(df_rnfx_crypto[,2:9]))
+
+all_mat <- cbind(df_rnfx_crypto, SAC)
+
+kable(round(cor(all_mat[,2:10]),3))
+
+```
+
+We can then plot the exchange rate of this crypto-based stablecoin against the dollar (again using $\mu = 1$). The coefficient of variation of the crypto-based stablecoin is 0.4. Not as low that of a previously constructed stablecoin but nonetheless an improvement in volatility when compared to other cryptocurrencies. Bitcoin, for example, has a coefficient of variation of 1 during the same time period.
+
+```{r sacCryptoPlot, echo = FALSE, fig.align='center'}
+
+# Get the SAC_USD price
+SAC_USD <- as.data.frame(t(Q_crypto %*% t(cbind(1, 1/df_fx_crypto[,2:8]))))
+
+# Rename columns
+colnames(SAC_USD) <- "SAC_USD"
+
+# SCoefficients of variation
+sd(SAC_USD$SAC_USD)/mean(SAC_USD$SAC_USD)
+sd(df_fx_crypto$BTC_USD)/mean(df_fx_crypto$BTC_USD)
+
+# Combine for plot
+df_fx_sac_plot <- data.frame(Date = df_fx_crypto$Date, SAC_USD)
+
+ggplot(data = df_fx_sac_plot, aes(y = SAC_USD, x = Date)) + 
+  geom_line() +
+  ylab("Exchange Rate (USD/SAC)") +
+  xlab("Date") +
+  theme_classic() +
+  labs(colour = "Currency") +
+  theme(legend.position="top",
+        legend.text = element_text(size = 8))
+
+        
+```
+
+There are several ways to go from here - one can think of ways to optimise which cryptocurrencies are best to have in the basket - or changing the criteria for currencies that should be in the basket that change over time or considering other assets to put in the basket. We will cover more in a second part to this.

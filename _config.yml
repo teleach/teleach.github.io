@@ -82,12 +82,12 @@ analytics:
 author:
   name             : "Thomas Leach"
   avatar           : "IMG_5174.jpeg"
-  bio              : "PhD Student"
+  bio              : "PhD Fellow at University of Pavia"
   location         : "Pavia"
-  employer         : "University of Pavia"
+  employer         : 
   pubmed           : 
   googlescholar    : "https://scholar.google.com/citations?user=6WAlMygAAAAJ&hl=en"
-  email            :
+  email            : 
   researchgate     :  # example: "https://www.researchgate.net/profile/yourprofile"
   uri              :
   bitbucket        :

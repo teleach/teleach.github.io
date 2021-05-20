@@ -1,11 +1,7 @@
 # main links links
 main:
   - title: "Publications"
-    url: /publications/
-
-  - title: "Research"
-    url: /research/    
-
-  - title: "Coding"
-    url: /coding/    
+    url: /publications/ 
  
+  - title: "Posts"
+    url: /year-archive/
