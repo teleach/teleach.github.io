@@ -13,7 +13,7 @@ name                     : &name "Tom"
 description              : &description "Quantitative analyst with 6+ years in buy-side and central-bank research, building Python tooling for portfolio analytics, risk modelling and data science."
 url                      : https://teleach.github.io # the base hostname & protocol for your site e.g. "https://mmistakes.github.io"
 baseurl                  : "" # the subpath of your site, e.g. "/blog"
-repository               : "teleach/academicpages.github.io"
+repository               : "teleach/teleach.github.io"
 teaser                   :  # filename of teaser fallback teaser image placed in /images/, .e.g. "500x300.png"
 breadcrumbs              : false # true, false (default)
 words_per_minute         : 160
