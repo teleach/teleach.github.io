@@ -4,3 +4,5 @@ Gemfile.lock
 .DS_Store
 CLAUDE.md
 CLAUDE.local.md
+*_cache/
+.Rhistory
