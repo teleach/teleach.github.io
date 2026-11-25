@@ -7,10 +7,10 @@
 
 # Site Settings
 locale                   : "en-US"
-title                    : "teleach"
+title                    : "Thomas Leach"
 title_separator          : "-"
 name                     : &name "Tom"
-description              : &description "PhD Student"
+description              : &description "Quantitative analyst with 6+ years in buy-side and central-bank research, building Python tooling for portfolio analytics, risk modelling and data science."
 url                      : https://teleach.github.io # the base hostname & protocol for your site e.g. "https://mmistakes.github.io"
 baseurl                  : "" # the subpath of your site, e.g. "/blog"
 repository               : "teleach/academicpages.github.io"
@@ -82,7 +82,7 @@ analytics:
 author:
   name             : "Thomas Leach"
   avatar           : "IMG_5174.jpeg"
-  bio              : "PhD Fellow at University of Pavia"
+  bio              : "Quantitative analyst and data scientist. Portfolio analytics, risk modelling, Python."
   location         : "Pavia"
   employer         : 
   pubmed           : 
