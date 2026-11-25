@@ -1,5 +1,5 @@
 ---
-title: Currency baskets, stablecoins, libra etc (Part 1)
+title: Building a minimum-variance currency basket for a stablecoin
 output:
   md_document:
     variant: gfm
@@ -10,10 +10,10 @@ date: 2021-05-19
 permalink: /posts/2020/05/libra-glp
 excerpt_separator: <!--more-->
 tags:
-  - jekyll
-  - rmarkdown
-  - data
-  - visualization
+  - stablecoins
+  - FX
+  - portfolio optimisation
+  - R
 ---
 
 ```{r setup, include=FALSE}
@@ -78,13 +78,23 @@ nval <- xrates / apply(xrates, 2, function(x) (prod(x[x!=0]))^(1/sum(x!=0)))
 
 ```
 
-This note is based on our paper [Giudici et al. (2021)](https://www.sciencedirect.com/science/article/pii/S1544612321001355).
-
-Stablecoins have become a major talking point in the cryptoasset domain. From the private sector, Facebook, amongst numerous others, have announced plans for their own privately issued stablecoin. In the most recent iteration of Facebooks proposition, the idea is to supply digital tokens that are pegged to major currencies, i.e. LibraUSD would be pegged to the US dollar. In addition, there will be another token whose value is derived from a weighted basket of the currencies provided on the platform. The exact composition of this basket and its targeted exchange rate is unspecified. With this research we ask the optimal structure of this basket. For this, we start from the assumption that the objective is to devise a digital currency whose exchange rate fluctuations are minimised against several currencies of the worlds major currencies.
+How should a stablecoin backed by a basket of currencies be weighted so that its value moves as little as possible? This note works through the approach from our paper [Giudici et al. (2021)](https://www.sciencedirect.com/science/article/pii/S1544612321001355) ([publication page](/publication/2021-04-08_GLP_Libra)), using R.
 
 <!--more-->
 
-To devise a minimum varying currency basket we use a methodology proposed by [Hovanov et al. (2004)](https://www.sciencedirect.com/science/article/pii/S0165188902000878). First, we obtain our FX rates. As a benchmark we start from the 5 currencies used in the IMFs SDR currency basket.
+**In short**
+
+- **Question:** which basket weights make a multi-currency stablecoin as stable as possible against the major currencies?
+- **Method:** convert FX rates into base-currency-invariant value indices (Hovanov et al., 2004), then solve a minimum-variance optimisation for the basket weights.
+- **Result:** the optimal basket spreads its weight far more evenly than the IMF's SDR basket (17% USD against 42%). A basket of cryptocurrencies is much less volatile than Bitcoin (coefficient of variation 0.39 against 1.01), but still well short of the fiat basket.
+
+### Background
+
+Stablecoins have become a major talking point in the cryptoasset domain. From the private sector, Facebook, amongst numerous others, have announced plans for their own privately issued stablecoin. In the most recent iteration of Facebook's proposition, the idea is to supply digital tokens that are pegged to major currencies, i.e. LibraUSD would be pegged to the US dollar. In addition, there will be another token whose value is derived from a weighted basket of the currencies provided on the platform. The exact composition of this basket and its targeted exchange rate is unspecified. With this research we ask what the optimal structure of this basket would be. For this, we start from the assumption that the objective is to devise a digital currency whose exchange rate fluctuations are minimised against several of the world's major currencies.
+
+*Update: Facebook's Libra project was renamed Diem in December 2020 and wound down in early 2022. The basket-design question applies to any multi-currency stablecoin.*
+
+To devise a minimum-variance currency basket we use a methodology proposed by [Hovanov et al. (2004)](https://www.sciencedirect.com/science/article/pii/S0165188902000878). First, we obtain our FX rates. As a benchmark we start from the 5 currencies used in the IMF's SDR currency basket.
 
 
 ```{r xratesFX, echo=FALSE}
@@ -94,7 +104,7 @@ kable(xrates)
 ```
 
 [Hovanov et al. (2004)](https://www.sciencedirect.com/science/article/pii/S0165188902000878) (herein HKS)
-show how to compute a invariant currency value index (ICVI) which is independent of base currency choice. Such that any set of foreign exchange rates can be converted to the index regardless of the base currency. 
+show how to compute an invariant currency value index (ICVI), which is independent of the choice of base currency, so any set of foreign exchange rates can be converted to the index regardless of the base currency. 
 
 To convert exchange rates into a currency invariant index HKS utilize the fact that exchange rates are measured by a scale of ratios with a precision of a positive factor $\beta$, where $\beta$ is defined as the geometric mean of the exchange rates.
 
@@ -102,7 +112,7 @@ To convert exchange rates into a currency invariant index HKS utilize the fact t
 <div class="math">\[ NVal_i = \frac{c_{ij}}{\sqrt[n]{\prod_{r=1}^{n} c_{rj}}} \]</div>
 ```
 
-where, c<sub>ij</sub> denotes the exchange rates. We compute these values through time and for convenience work with the reduced (to the moment t=0) normalized value in exchange. Such that at date t=0 the value RNVal<sub>i</sub>  = 1. The reduced normalised values are shown in the table below:
+where c<sub>ij</sub> denotes the exchange rates. We compute these values through time and for convenience work with the reduced (to the moment t=0) normalised value in exchange, such that at date t=0 the value RNVal<sub>i</sub>  = 1. The reduced normalised values are shown in the table below:
 
 ```{r data2, echo=FALSE}
 
@@ -116,7 +126,7 @@ df_rnfx <- cbind(df_fx$Date, df_rnfx)
 colnames(df_rnfx)[1] <- "Date"
 
 
-kable(head(df_rnfx))
+kable(head(df_rnfx), row.names = FALSE)
 
 ```
 
@@ -139,9 +149,9 @@ ggplot(data = df_toplot, aes(y = value, x = Date, colour = variable)) +
         legend.text = element_text(size = 8))
 ```
 
-The interpretation of the ICVI is that changes in value of the corresponding currencies can be assessed in the context of an average. Typically, we only measure performances of currencies against a numeraire (another currency or asset). By contrast, using the index, we would infer that the value of the dollar was rising on average against the currencies used in the computation of the geometric mean currency value. From our plot we observe the USD and GBP are the currencies that have appreciated the most against the average of our set of currencies, while the CNY, EUR and YEN have depreciated (on average) since 2002. 
+The interpretation of the ICVI is that changes in value of the corresponding currencies can be assessed in the context of an average. Typically, we only measure performances of currencies against a numeraire (another currency or asset). By contrast, using the index, we would infer that the value of the dollar was rising on average against the currencies used in the computation of the geometric mean currency value. From our plot we observe the USD and GBP are the currencies that have appreciated the most against the average of our set of currencies, while the CNY, EUR and JPY have depreciated (on average) since 2002. 
 
-HKS go on to demonstrate how the index can be used to derive a minimum variance currency basket (MVCB) e.g. a stablecoin! The objective is to solve the optimal weights across the currencies.
+HKS go on to demonstrate how the index can be used to derive a minimum variance currency basket (MVCB), i.e. a stablecoin. The objective is to solve for the optimal weights across the currencies.
 
 
 ```{r optimiseWeights, echo=FALSE, message=FALSE, results='hide'}
@@ -180,7 +190,7 @@ Now we want to find the composition of the basket to generate 'the most stable' 
 <div class="math">\[ \min_{w} \; w \, \Omega \, w^{\prime} \quad \text{s.t.} \quad \sum_{i=1}^{n} w_i = 1, \;\; w_i \geq 0 \]</div>
 ```
 
-where $\Omega$ is the covariance of the reduced normalised values. Computing this we find the weights to devise the minimum varying currency basket (stablecoin).
+where $\Omega$ is the covariance of the reduced normalised values. Computing this we find the weights to devise the minimum-variance currency basket (stablecoin).
 
 ```{r showWeights, echo=FALSE, fig.align='center'}
 
@@ -202,15 +212,15 @@ kable((round(Weights_table,3)))
 
 ```
 
-The weights derived from the minimisation problem suggests that the distribution of the weights should be spread more evenly than those of the IMF SDRs. The heavier weighting on the dollar means fluctuations of SDRs will be positive correlated with those of the dollar, whereas the more diversified weight regime implied by the minimisation problem implies that the fluctuations of individual currencies in the basket offset one another. Working with the currency invariant indices is useful but what most people would be concerned with is the price of the stablecion (in dollars or any other currency). 
+The weights derived from the minimisation problem suggest that the distribution of the weights should be spread more evenly than those of the IMF SDRs. The heavier weighting on the dollar means fluctuations of SDRs will be positively correlated with those of the dollar, whereas the more diversified weight regime implied by the minimisation problem implies that the fluctuations of individual currencies in the basket offset one another. Working with the currency invariant indices is useful but what most people would be concerned with is the price of the stablecoin (in dollars or any other currency). 
 
-To retrieve the price we need to obtain the quantities of each currency should be held, this is obtained through the following relation:
+To retrieve the price we need to obtain the quantities of each currency that should be held, which are obtained through the following relation:
 
 ```{=html}
 <div class="math">\[ q_i = \mu \, \frac{w_i}{c_{ij}(t_0)} \]</div>
 ```
 
-where $\mu$ is a scale factor that effectively determines the initial exchange rate between the stablecoin and a chosen currency, j. For example, if we we take $\mu = 1$, 1 unit of stablecoin (SAC) will equal 1 unit of the second currenc e.g. USD. We start from 1SAC = 1USD. Note we can target any price and the same series will be replicated, but simply rescaled, such that we could choose any target price to start from. The plot below shows a rescaled version by 1.5. 
+where $\mu$ is a scale factor that effectively determines the initial exchange rate between the stablecoin and a chosen currency, j. For example, if we take $\mu = 1$, 1 unit of stablecoin (SAC) will equal 1 unit of the second currency, e.g. USD. We start from 1SAC = 1USD. Note we can target any price and the same series will be replicated, but simply rescaled, such that we could choose any target price to start from. The plot below shows a rescaled version by 1.5. 
 
 
 ```{r sacPlot, echo = FALSE, fig.align='center'}
@@ -246,7 +256,7 @@ ggplot(data = df_fx_sac_plot, aes(y = value, x = Date, colour = variable)) +
 
 ### How can this work in practice?
 
-So far, HKS provide us a methodology to find a minimum varying currency basket, but the so far we only looked at the moethodology in a backward looking context. We don't know how it would perform out-of-sample. As a simple exercise we compute weights based on a 30-day rolling window, then project the price over the next 30 days i.e. a we consider a scenario where an issuer of a weighted stablecion could update the weights every 30 days based on this methodology to keep the price as stable as possible. We then update $\mu$ in each window to be the last observed price of the previous window.
+So far, HKS provide us a methodology to find a minimum-variance currency basket, but so far we have only looked at the methodology in a backward-looking context. We don't know how it would perform out-of-sample. As a simple exercise we compute weights based on a 30-day rolling window, then project the price over the next 30 days, i.e. we consider a scenario where an issuer of a weighted stablecoin could update the weights every 30 days based on this methodology to keep the price as stable as possible. We then update $\mu$ in each window to be the last observed price of the previous window.
 
 ```{r rollingWeights, echo = FALSE, message=FALSE, results='hide'}
 
@@ -321,12 +331,12 @@ ggplot(data = df_toplot, aes(y = value, x = Date, colour = variable)) +
         
 ```
 
-From the graph, the price of the stablecoin appears to follow a similar path to that of the historic price reconstruction done previously. Comparing standard deviations, the rolling-window series is more volatile (less stable) than the historical reconstruction. The series also runs countercyclical to the path followed by the Euro and Sterling, eluding to some notion that this asset could be used for hedging currency risks.
+From the graph, the price of the stablecoin appears to follow a similar path to that of the historic price reconstruction done previously. Comparing standard deviations, the rolling-window series is more volatile (less stable) than the historical reconstruction. The series also runs countercyclical to the path followed by the Euro and Sterling, alluding to some notion that this asset could be used for hedging currency risks.
 
 
 ### What else can we do?
 
-The first step that one might think of is to add additional assets or currencies to the basket. In particular, since we are talking about stablecoins in the crypto domain we can see if we can construct a stable basket of cryptocurrencies. We strat with a basket of Bitcoin, EOS, Ethereum, Litecoin, Monero, Stellar and XRP.
+The first step that one might think of is to add additional assets or currencies to the basket. In particular, since we are talking about stablecoins in the crypto domain we can see if we can construct a stable basket of cryptocurrencies. We start with a basket of Bitcoin, EOS, Ethereum, Litecoin, Monero, Stellar and XRP.
 
 
 ```{r loadCryptos, echo = FALSE}
@@ -410,9 +420,9 @@ names(Weights_crypto) <- curr_names
 
 ```
 
-The picture is a different one to what we observed with major currencies, perhaps unsurprisingly as cryptocurrencies exhibit price dynamics markedly different from the standard currencies. However, could we construct something less volatile using these cryptocurrencies? Something of additional interest to note from the graph is that in 2021 the dollars has depreciated on average against all of the cryptocurrencies in the basket. 
+The picture is a different one to what we observed with major currencies, perhaps unsurprisingly as cryptocurrencies exhibit price dynamics markedly different from the standard currencies. However, could we construct something less volatile using these cryptocurrencies? Something of additional interest to note from the graph is that in 2021 the dollar has depreciated on average against all of the cryptocurrencies in the basket. 
 
-We construct our weighted average basket as before and this time inspect the correlations between the RNvals of the cryptocurrencies (+ dollar) in our basket and our weighted combination. The correlation between the stablecoin, denoted SAC, are relatively low with respect to other cryptocurrencies i.e. -> 0.
+We construct our weighted average basket as before and this time inspect the correlations between the RNvals of the cryptocurrencies (+ dollar) in our basket and our weighted combination. The correlations between the stablecoin, denoted SAC, and the individual cryptocurrencies are low, close to 0.
 
 ```{r cryptoStableCoin, echo=FALSE, fig.align='center'}
 
@@ -458,7 +468,7 @@ ggplot(data = df_fx_sac_plot, aes(y = SAC_USD, x = Date)) +
         
 ```
 
-There are several ways to go from here - one can think of ways to optimise which cryptocurrencies are best to have in the basket - or changing the criteria for currencies that should be in the basket that change over time or considering other assets to put in the basket. We will cover more in a second part to this.
+There are several ways to extend this: optimising which cryptocurrencies to include, letting the basket's membership change over time, or adding other asset classes.
 
 ```{=html}
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-chtml.js" async></script>
